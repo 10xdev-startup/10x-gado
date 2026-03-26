@@ -24,22 +24,29 @@ function AppSidebar() {
   const pathname  = usePathname()
   const { setOpen, isMobile } = useSidebar()
 
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('sidebar-mode') as SidebarMode) || 'expanded'
-    }
-    return 'expanded'
-  })
+  // Must match SSR: reading localStorage in useState initializer causes hydration
+  // mismatch when saved mode is "hover" (SidebarRail only then).
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('expanded')
+  const [modeRestored, setModeRestored] = useState(false)
 
   const prevModeRef = useRef<string | null>(null)
 
   useEffect(() => {
+    const stored = localStorage.getItem('sidebar-mode') as SidebarMode | null
+    if (stored === 'expanded' || stored === 'collapsed' || stored === 'hover') {
+      setSidebarMode(stored)
+    }
+    setModeRestored(true)
+  }, [])
+
+  useEffect(() => {
+    if (!modeRestored) return
     if (prevModeRef.current === sidebarMode) return
     prevModeRef.current = sidebarMode
     localStorage.setItem('sidebar-mode', sidebarMode)
     if (isMobile) return
     setOpen(sidebarMode === 'expanded')
-  }, [sidebarMode, setOpen, isMobile])
+  }, [sidebarMode, setOpen, isMobile, modeRestored])
 
   const leaveTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dropdownOpenRef  = useRef(false)
