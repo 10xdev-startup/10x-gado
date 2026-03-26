@@ -1,0 +1,437 @@
+'use client'
+
+import {
+  useReactTable,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  getPaginationRowModel,
+  flexRender,
+  ColumnDef,
+  ColumnFiltersState,
+  SortingState,
+  RowData,
+} from '@tanstack/react-table'
+import { useState, useMemo } from 'react'
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+
+declare module '@tanstack/react-table' {
+  interface ColumnMeta<TData extends RowData, TValue> {
+    pesagemNum?: number
+  }
+}
+
+type Pesagem = {
+  numero: number
+  data: string | null
+  peso_kg: number | null
+  peso_arroba: number | null
+}
+
+type Animal = {
+  id: string
+  numero_boi: number
+  vendedor: string | null
+  data_compra: string | null
+  valor_compra: number | null
+  status: string | null
+  data_venda: string | null
+  pesagens: Pesagem[]
+}
+
+type AnimalRow = {
+  id: string
+  numero_boi: number
+  vendedor: string | null
+  data_compra: string | null
+  valor_compra: number | null
+  status: string | null
+  data_venda: string | null
+  ultimo_kg: number | null
+  ultima_data: string | null
+  [key: string]: unknown
+}
+
+// ---------------------------------------------------------------------------
+// Cores por pesagem
+// ---------------------------------------------------------------------------
+const PESAGEM_COLORS: Record<number, { header: string; cell: string }> = {
+  1: { header: 'bg-blue-200',   cell: 'bg-blue-50' },
+  2: { header: 'bg-green-200',  cell: 'bg-green-50' },
+  3: { header: 'bg-purple-200', cell: 'bg-purple-50' },
+  4: { header: 'bg-orange-200', cell: 'bg-orange-50' },
+  5: { header: 'bg-pink-200',   cell: 'bg-pink-50' },
+  6: { header: 'bg-cyan-200',   cell: 'bg-cyan-50' },
+  7: { header: 'bg-amber-200',  cell: 'bg-amber-50' },
+  8: { header: 'bg-red-200',    cell: 'bg-red-50' },
+  9: { header: 'bg-gray-200',   cell: 'bg-gray-50' },
+}
+
+// ---------------------------------------------------------------------------
+// Status
+// ---------------------------------------------------------------------------
+const STATUS_LABEL: Record<string, string> = {
+  vivo: 'Vivo', morreu: 'Morreu', vendido: 'Vendido',
+}
+const STATUS_CLASS: Record<string, string> = {
+  vivo: 'bg-green-100 text-green-800',
+  morreu: 'bg-red-100 text-red-800',
+  vendido: 'bg-yellow-100 text-yellow-800',
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+  const key = status ?? ''
+  return (
+    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[key] ?? 'bg-gray-100 text-gray-700'}`}>
+      {STATUS_LABEL[key] ?? status ?? '—'}
+    </span>
+  )
+}
+
+function formatDate(s: string | null | unknown) {
+  if (!s || typeof s !== 'string') return '—'
+  const [y, m, d] = s.split('-')
+  return `${d}/${m}/${y}`
+}
+
+function formatBRL(n: number | null) {
+  if (n == null) return '—'
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function numFmt(v: unknown) {
+  if (v == null) return '—'
+  return String(v)
+}
+
+function formatArrobaRange(kg: number) {
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(kg / 30)
+}
+
+// ---------------------------------------------------------------------------
+// Componente
+// ---------------------------------------------------------------------------
+export default function AnimaisTable({ data }: { data: Animal[] }) {
+  const filterControlClass =
+    'h-6 rounded-md border border-input bg-background px-2 text-[11px] box-border ' +
+    'focus-visible:outline-none focus-visible:border-ring focus-visible:ring-1 ' +
+    'focus-visible:ring-inset focus-visible:ring-ring/30'
+  const pesoBucketSize = 100
+
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'numero_boi', desc: false }])
+  const [boiSearch, setBoiSearch] = useState('')
+  const [sortKey, setSortKey] = useState('numero_boi-asc')
+  const [pesoRange, setPesoRange] = useState('')
+
+  // Transforma animais → linhas com p1_data, p1_kg, p1_arroba, p2_data...
+  const rows: AnimalRow[] = useMemo(() => {
+    return data.map((a) => {
+      const byNum: Record<number, Pesagem> = {}
+      for (const p of a.pesagens) byNum[p.numero] = p
+
+      const ultima = a.pesagens.length > 0
+        ? a.pesagens.reduce((max, p) => p.numero > max.numero ? p : max)
+        : null
+
+      const row: AnimalRow = {
+        id: a.id,
+        numero_boi: a.numero_boi,
+        vendedor: a.vendedor,
+        data_compra: a.data_compra,
+        valor_compra: a.valor_compra,
+        status: a.status,
+        data_venda: a.data_venda,
+        ultimo_kg: ultima?.peso_kg ?? null,
+        ultima_data: ultima?.data ?? null,
+      }
+
+      for (let i = 1; i <= 9; i++) {
+        const p = byNum[i] ?? null
+        row[`p${i}_data`]   = p?.data ?? null
+        row[`p${i}_kg`]     = p?.peso_kg ?? null
+        row[`p${i}_arroba`] = p?.peso_arroba ?? null
+      }
+
+      return row
+    })
+  }, [data])
+
+  const vendedores = useMemo(() => {
+    const set = new Set(data.map((a) => a.vendedor ?? ''))
+    return Array.from(set).filter(Boolean).sort()
+  }, [data])
+
+  const pesoRangeOptions = useMemo(() => {
+    const liveWeights = rows
+      .filter((r) => r.status === 'vivo' && typeof r.ultimo_kg === 'number')
+      .map((r) => r.ultimo_kg as number)
+
+    if (liveWeights.length === 0) return []
+
+    const minWeight = Math.floor(Math.min(...liveWeights) / pesoBucketSize) * pesoBucketSize
+    const maxWeight = Math.ceil(Math.max(...liveWeights) / pesoBucketSize) * pesoBucketSize
+    const options: Array<{ value: string; label: string }> = []
+
+    for (let start = minWeight; start < maxWeight; start += pesoBucketSize) {
+      const end = start + pesoBucketSize
+      options.push({
+        value: `${start}-${end}`,
+        label: `${start} a ${end} kg - ${formatArrobaRange(start)} a ${formatArrobaRange(end)} @`,
+      })
+    }
+
+    return options.reverse()
+  }, [rows])
+
+  const filteredRows = useMemo(() => {
+    let nextRows = rows
+
+    if (boiSearch) {
+      const n = parseInt(boiSearch)
+      if (!isNaN(n)) {
+        nextRows = nextRows.filter((r) => r.numero_boi === n)
+      }
+    }
+
+    if (pesoRange) {
+      const [minStr, maxStr] = pesoRange.split('-')
+      const min = Number(minStr)
+      const max = Number(maxStr)
+
+      if (!Number.isNaN(min) && !Number.isNaN(max)) {
+        nextRows = nextRows.filter((r) => (
+          r.status === 'vivo' &&
+          typeof r.ultimo_kg === 'number' &&
+          r.ultimo_kg >= min &&
+          r.ultimo_kg < max
+        ))
+      }
+    }
+
+    return nextRows
+  }, [rows, boiSearch, pesoRange])
+
+  // Colunas base
+  const baseColumns = useMemo<ColumnDef<AnimalRow>[]>(() => [
+    { accessorKey: 'numero_boi', header: 'Boi', size: 60 },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: (info) => <StatusBadge status={info.getValue() as string} />,
+      filterFn: 'equals',
+    },
+    { accessorKey: 'vendedor', header: 'Vendedor', filterFn: 'equals' },
+    { accessorKey: 'data_compra', header: 'Compra', cell: (info) => formatDate(info.getValue()) },
+    { accessorKey: 'valor_compra', header: 'Valor', cell: (info) => formatBRL(info.getValue() as number) },
+  ], [])
+
+  // Colunas de pesagem (1-9)
+  const pesagemColumns = useMemo<ColumnDef<AnimalRow>[]>(() => {
+    const cols: ColumnDef<AnimalRow>[] = []
+    for (let i = 1; i <= 9; i++) {
+      cols.push(
+        {
+          id: `p${i}_data`,
+          accessorKey: `p${i}_data`,
+          header: `Data ${i}`,
+          cell: (info) => formatDate(info.getValue()),
+          meta: { pesagemNum: i },
+          enableSorting: false,
+        },
+        {
+          id: `p${i}_kg`,
+          accessorKey: `p${i}_kg`,
+          header: `KG ${i}`,
+          cell: (info) => numFmt(info.getValue()),
+          meta: { pesagemNum: i },
+        },
+      )
+      cols.push({
+        id: `p${i}_arroba`,
+        accessorKey: `p${i}_arroba`,
+        header: `@ ${i}`,
+        cell: (info) => numFmt(info.getValue()),
+        meta: { pesagemNum: i },
+        enableSorting: false,
+      })
+    }
+    return cols
+  }, [])
+
+  const columns = useMemo(() => [...baseColumns, ...pesagemColumns], [baseColumns, pesagemColumns])
+
+  const table = useReactTable({
+    data: filteredRows,
+    columns,
+    state: { columnFilters, sorting },
+    onColumnFiltersChange: setColumnFilters,
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: { pagination: { pageSize: 50 } },
+  })
+
+  const statusFilter   = (columnFilters.find((f) => f.id === 'status')?.value as string) ?? ''
+  const vendedorFilter = (columnFilters.find((f) => f.id === 'vendedor')?.value as string) ?? ''
+
+  function setFilter(id: string, value: string) {
+    setColumnFilters((prev) => {
+      const rest = prev.filter((f) => f.id !== id)
+      return value ? [...rest, { id, value }] : rest
+    })
+  }
+
+  function handleSort(value: string) {
+    setSortKey(value)
+    const [id, dir] = value.split('-')
+    setSorting([{ id, desc: dir === 'desc' }])
+  }
+
+  return (
+    <div className="flex flex-col gap-3 h-full min-h-0 px-2 pb-4">
+      {/* Filtros */}
+      <div className="inline-block min-w-full pr-16">
+        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-1.5">
+          <div className="min-w-0 overflow-x-auto">
+            <div className="flex w-max gap-1.5 pr-2">
+              <input
+                type="number"
+                placeholder="Buscar boi #"
+                value={boiSearch}
+                onChange={(e) => setBoiSearch(e.target.value)}
+                className={`${filterControlClass} w-24`}
+              />
+              <select
+                value={statusFilter}
+                onChange={(e) => setFilter('status', e.target.value)}
+                className={`${filterControlClass} w-28`}
+              >
+                <option value="">Todos os status</option>
+                <option value="vivo">Vivo</option>
+                <option value="morreu">Morreu</option>
+                <option value="vendido">Vendido</option>
+              </select>
+              <select
+                value={vendedorFilter}
+                onChange={(e) => setFilter('vendedor', e.target.value)}
+                className={`${filterControlClass} w-40`}
+              >
+                <option value="">Todos os vendedores</option>
+                {vendedores.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+              <select
+                value={sortKey}
+                onChange={(e) => handleSort(e.target.value)}
+                className={`${filterControlClass} w-40`}
+              >
+                <option value="numero_boi-asc">Boi: menor → maior</option>
+                <option value="numero_boi-desc">Boi: maior → menor</option>
+                <option value="ultimo_kg-desc">Peso: maior → menor</option>
+                <option value="ultimo_kg-asc">Peso: menor → maior</option>
+                <option value="ultima_data-desc">Pesagem: mais recente</option>
+                <option value="ultima_data-asc">Pesagem: mais antiga</option>
+              </select>
+              <select
+                value={pesoRange}
+                onChange={(e) => setPesoRange(e.target.value)}
+                className={`${filterControlClass} w-36`}
+              >
+                <option value="">Vivos: todos os pesos</option>
+                {pesoRangeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 whitespace-nowrap justify-self-end">
+            <button
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+              className="h-6 rounded-md border px-1.5 text-[11px] disabled:opacity-40 hover:bg-muted transition-colors"
+            >
+              Anterior
+            </button>
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+              {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
+            </span>
+            <button
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+              className="h-6 rounded-md border px-1.5 text-[11px] disabled:opacity-40 hover:bg-muted transition-colors"
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabela */}
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="inline-block pr-12">
+          <div className="overflow-hidden rounded-md border">
+            <table className="text-xs border-collapse w-max">
+              <thead>
+                {table.getHeaderGroups().map((hg) => (
+                  <tr key={hg.id}>
+                    {hg.headers.map((header, columnIndex) => {
+                      const pNum = header.column.columnDef.meta?.pesagemNum
+                      const colorClass = pNum ? PESAGEM_COLORS[pNum].header : 'bg-muted/50'
+                      const isFirstColumn = columnIndex === 0
+                      return (
+                        <th
+                          key={header.id}
+                          className={`px-2 py-1 text-left font-medium whitespace-nowrap border-b border-r last:border-r-0 cursor-pointer select-none sticky top-0 z-20 ${colorClass} ${isFirstColumn ? 'left-0 z-30 shadow-[2px_0_0_rgba(0,0,0,0.06)]' : ''}`}
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          <div className="flex items-center gap-1">
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                            {header.column.getCanSort() && (
+                              header.column.getIsSorted() === 'asc'  ? <ChevronUp className="size-3" /> :
+                              header.column.getIsSorted() === 'desc' ? <ChevronDown className="size-3" /> :
+                              <ChevronsUpDown className="size-3 opacity-40" />
+                            )}
+                          </div>
+                        </th>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.getRowModel().rows.map((row) => (
+                  <tr key={row.id} className="border-t hover:brightness-95 transition-colors">
+                    {row.getVisibleCells().map((cell, columnIndex) => {
+                      const pNum = cell.column.columnDef.meta?.pesagemNum
+                      const colorClass = pNum ? PESAGEM_COLORS[pNum].cell : ''
+                      const isFirstColumn = columnIndex === 0
+                      return (
+                        <td
+                          key={cell.id}
+                          className={`px-2 py-0.5 whitespace-nowrap border-r last:border-r-0 ${colorClass} ${isFirstColumn ? 'sticky left-0 z-10 bg-background shadow-[2px_0_0_rgba(0,0,0,0.06)]' : ''}`}
+                        >
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  )
+}

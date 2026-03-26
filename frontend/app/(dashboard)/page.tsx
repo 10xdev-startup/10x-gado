@@ -1,31 +1,46 @@
-import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
+import AnimaisTable from '@/components/AnimaisTable'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
-function WelcomeCard() {
-  return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-sm max-w-sm w-full">
-      <div className="flex items-center gap-3 mb-3">
-        <span className="text-2xl">🚀</span>
-        <h2 className="font-semibold text-base">Bem-vindo ao template</h2>
-      </div>
-      <p className="text-sm text-muted-foreground mb-4">
-        Seja bem-vindo a esse template. Se quiser ajuda para construir seu projeto, acesse:
-      </p>
-      <Link
-        href="https://10xdev.com.br"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-      >
-        10xdev.com.br
-      </Link>
-    </div>
-  )
-}
+export default async function HomePage() {
+  const supabase = await createClient()
 
-export default function HomePage() {
+  const { data, error } = await supabase
+    .from('animais')
+    .select(`
+      id,
+      numero_boi,
+      vendedor,
+      data_compra,
+      valor_compra,
+      status,
+      data_venda,
+      pesagens (
+        numero,
+        data,
+        peso_kg,
+        peso_arroba
+      )
+    `)
+    .order('numero_boi', { ascending: true })
+
+  if (error) {
+    return <p className="text-red-500">Erro ao carregar animais: {error.message}</p>
+  }
+
   return (
-    <div className="p-2">
-      <WelcomeCard />
+    <div className="h-full flex flex-col gap-3 min-h-0">
+      <h1 className="text-xl font-semibold shrink-0">Animais</h1>
+      <Tabs defaultValue="evolucao" className="flex flex-col flex-1 min-h-0 gap-3">
+        <div className="inline-block min-w-full px-2 pr-16 shrink-0">
+          <TabsList className="shrink-0 w-full">
+            <TabsTrigger value="evolucao">Evolução</TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="evolucao" className="flex-1 min-h-0 overflow-hidden mt-0">
+          <AnimaisTable data={data ?? []} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
