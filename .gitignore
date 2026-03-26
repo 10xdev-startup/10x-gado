@@ -5,3 +5,12 @@ node_modules/
 dist/
 .next/
 *.log
+
+# Dados brutos, scripts e gerados
+"Fazenda.xlsx - Evolução Gado.csv"
+Fazenda*.csv
+output/
+scripts/
+
+# Editor
+.cursor/
