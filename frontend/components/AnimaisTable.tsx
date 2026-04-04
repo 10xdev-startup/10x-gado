@@ -11,9 +11,19 @@ import {
   ColumnFiltersState,
   SortingState,
   RowData,
+  Row,
 } from '@tanstack/react-table'
 import { useState, useMemo } from 'react'
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 declare module '@tanstack/react-table' {
   interface ColumnMeta<TData extends RowData, TValue> {
@@ -49,6 +59,7 @@ type AnimalRow = {
   data_venda: string | null
   ultimo_kg: number | null
   ultima_data: string | null
+  datas_pesagens: string[]
   [key: string]: unknown
 }
 
@@ -111,6 +122,20 @@ function formatArrobaRange(kg: number) {
   }).format(kg / 30)
 }
 
+function compareNullableNumbers(a: number | null, b: number | null) {
+  if (a == null && b == null) return 0
+  if (a == null) return 1
+  if (b == null) return -1
+  return a - b
+}
+
+function compareNullableIsoDates(a: string | null, b: string | null) {
+  if (!a && !b) return 0
+  if (!a) return 1
+  if (!b) return -1
+  return a.localeCompare(b)
+}
+
 // ---------------------------------------------------------------------------
 // Componente
 // ---------------------------------------------------------------------------
@@ -126,6 +151,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
   const [boiSearch, setBoiSearch] = useState('')
   const [sortKey, setSortKey] = useState('numero_boi-asc')
   const [pesoRange, setPesoRange] = useState('')
+  const [pesagemDateFilters, setPesagemDateFilters] = useState<string[]>([])
 
   // Transforma animais → linhas com p1_data, p1_kg, p1_arroba, p2_data...
   const rows: AnimalRow[] = useMemo(() => {
@@ -147,6 +173,9 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
         data_venda: a.data_venda,
         ultimo_kg: ultima?.peso_kg ?? null,
         ultima_data: ultima?.data ?? null,
+        datas_pesagens: a.pesagens
+          .map((p) => p.data)
+          .filter((date): date is string => Boolean(date)),
       }
 
       for (let i = 1; i <= 9; i++) {
@@ -187,6 +216,18 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
     return options.reverse()
   }, [rows])
 
+  const pesagemDateOptions = useMemo(() => {
+    const uniqueDates = new Set<string>()
+
+    for (const row of rows) {
+      for (const date of row.datas_pesagens) {
+        uniqueDates.add(date)
+      }
+    }
+
+    return Array.from(uniqueDates).sort((a, b) => b.localeCompare(a))
+  }, [rows])
+
   const filteredRows = useMemo(() => {
     let nextRows = rows
 
@@ -212,8 +253,14 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
       }
     }
 
+    if (pesagemDateFilters.length > 0) {
+      nextRows = nextRows.filter((r) => (
+        r.datas_pesagens.some((date) => pesagemDateFilters.includes(date))
+      ))
+    }
+
     return nextRows
-  }, [rows, boiSearch, pesoRange])
+  }, [rows, boiSearch, pesoRange, pesagemDateFilters])
 
   // Colunas base
   const baseColumns = useMemo<ColumnDef<AnimalRow>[]>(() => [
@@ -227,6 +274,28 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
     { accessorKey: 'vendedor', header: 'Vendedor', filterFn: 'equals' },
     { accessorKey: 'data_compra', header: 'Compra', cell: (info) => formatDate(info.getValue()) },
     { accessorKey: 'valor_compra', header: 'Valor', cell: (info) => formatBRL(info.getValue() as number) },
+    {
+      accessorKey: 'ultimo_kg',
+      header: 'Último KG',
+      cell: (info) => numFmt(info.getValue()),
+      sortingFn: (rowA: Row<AnimalRow>, rowB: Row<AnimalRow>, columnId: string) => (
+        compareNullableNumbers(
+          rowA.getValue(columnId) as number | null,
+          rowB.getValue(columnId) as number | null,
+        )
+      ),
+    },
+    {
+      accessorKey: 'ultima_data',
+      header: 'Última pesagem',
+      cell: (info) => formatDate(info.getValue()),
+      sortingFn: (rowA: Row<AnimalRow>, rowB: Row<AnimalRow>, columnId: string) => (
+        compareNullableIsoDates(
+          rowA.getValue(columnId) as string | null,
+          rowB.getValue(columnId) as string | null,
+        )
+      ),
+    },
   ], [])
 
   // Colunas de pesagem (1-9)
@@ -274,7 +343,13 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 50 } },
+    initialState: {
+      pagination: { pageSize: 50 },
+      columnVisibility: {
+        ultimo_kg: false,
+        ultima_data: false,
+      },
+    },
   })
 
   const statusFilter   = (columnFilters.find((f) => f.id === 'status')?.value as string) ?? ''
@@ -292,6 +367,28 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
     const [id, dir] = value.split('-')
     setSorting([{ id, desc: dir === 'desc' }])
   }
+
+  function togglePesagemDate(date: string) {
+    setPesagemDateFilters((prev) => (
+      prev.includes(date)
+        ? prev.filter((item) => item !== date)
+        : [...prev, date]
+    ))
+  }
+
+  function clearPesagemDates() {
+    setPesagemDateFilters([])
+  }
+
+  function selectAllPesagemDates() {
+    setPesagemDateFilters(pesagemDateOptions)
+  }
+
+  const pesagemDateFilterLabel = pesagemDateFilters.length === 0
+    ? 'Pesagens: todas as datas'
+    : pesagemDateFilters.length === 1
+      ? `Pesagem: ${formatDate(pesagemDateFilters[0])}`
+      : `Pesagens: ${pesagemDateFilters.length} datas`
 
   return (
     <div className="flex flex-col gap-3 h-full min-h-0 px-2 pb-4">
@@ -339,6 +436,37 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
                 <option value="ultima_data-desc">Pesagem: mais recente</option>
                 <option value="ultima_data-asc">Pesagem: mais antiga</option>
               </select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className={`${filterControlClass} inline-flex w-44 items-center justify-between text-left`}
+                  >
+                    <span className="block truncate">{pesagemDateFilterLabel}</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuLabel>Datas de pesagem</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={selectAllPesagemDates}>
+                    Selecionar todas
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={clearPesagemDates}>
+                    Limpar
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {pesagemDateOptions.map((date) => (
+                    <DropdownMenuCheckboxItem
+                      key={date}
+                      checked={pesagemDateFilters.includes(date)}
+                      onSelect={(event) => event.preventDefault()}
+                      onCheckedChange={() => togglePesagemDate(date)}
+                    >
+                      {formatDate(date)}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <select
                 value={pesoRange}
                 onChange={(e) => setPesoRange(e.target.value)}
@@ -355,6 +483,9 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
           </div>
 
           <div className="flex items-center gap-1.5 whitespace-nowrap justify-self-end">
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+              {filteredRows.length} bois
+            </span>
             <button
               onClick={() => table.previousPage()}
               disabled={!table.getCanPreviousPage()}
