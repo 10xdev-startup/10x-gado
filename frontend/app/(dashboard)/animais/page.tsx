@@ -9,6 +9,7 @@ export default async function AnimaisPage() {
     .select(`
       id,
       numero_boi,
+      boi_planilha,
       vendedor,
       data_compra,
       valor_compra,
@@ -19,7 +20,8 @@ export default async function AnimaisPage() {
         numero,
         data,
         peso_kg,
-        peso_arroba
+        peso_arroba,
+        created_at
       )
     `)
     .order('numero_boi', { ascending: true })

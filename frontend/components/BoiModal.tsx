@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { isoToBR, mascaraDataBR, parseDataBR } from '@/lib/dataBR'
@@ -16,6 +16,7 @@ type Pesagem = {
 type Animal = {
   id: string
   numero_boi: number
+  boi_planilha: number | null
   pesagens: Pesagem[]
 }
 
@@ -53,6 +54,7 @@ export default function BoiModal({
   )
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const datePickerRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const maxNumero = linhas.reduce((m, l) => Math.max(m, l.numero), 0)
 
@@ -71,8 +73,8 @@ export default function BoiModal({
     const updates: {
       id: string
       data: string
-      peso_kg: number
-      peso_arroba: number
+      peso_kg: number | null
+      peso_arroba: number | null
     }[] = []
 
     for (const l of linhas) {
@@ -81,10 +83,15 @@ export default function BoiModal({
         setErro(`Peso ${String(l.numero).padStart(2, '0')}: data inválida.`)
         return
       }
-      const peso = parseFloat(l.peso_kg.replace(',', '.').trim())
-      if (!Number.isFinite(peso) || peso <= 0) {
-        setErro(`Peso ${String(l.numero).padStart(2, '0')}: peso (kg) inválido.`)
-        return
+      const pesoRaw = l.peso_kg.replace(',', '.').trim()
+      let peso: number | null = null
+      if (pesoRaw !== '') {
+        const parsed = parseFloat(pesoRaw)
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          setErro(`Peso ${String(l.numero).padStart(2, '0')}: peso (kg) inválido.`)
+          return
+        }
+        peso = parsed
       }
       const original = originais.get(l.id)
       if (!original) continue
@@ -95,7 +102,7 @@ export default function BoiModal({
           id: l.id,
           data: dataISO,
           peso_kg: peso,
-          peso_arroba: Math.round((peso / 15) * 100) / 100,
+          peso_arroba: peso == null ? null : Math.round((peso / 15) * 100) / 100,
         })
       }
     }
@@ -162,7 +169,12 @@ export default function BoiModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-4 py-3 border-b flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Boi #{animal.numero_boi}</h2>
+          <h2 className="text-sm font-semibold">
+            Boi #{animal.numero_boi}
+            {animal.boi_planilha != null && (
+              <span className="text-muted-foreground font-normal"> (planilha #{animal.boi_planilha})</span>
+            )}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -193,14 +205,48 @@ export default function BoiModal({
                     <span className="text-[11px] text-muted-foreground w-14 shrink-0">
                       Peso {String(l.numero).padStart(2, '0')}:
                     </span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="DD/MM/AA"
-                      value={l.dataBR}
-                      onChange={(e) => atualizarLinha(l.id, { dataBR: mascaraDataBR(e.target.value) })}
-                      className="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs font-mono"
-                    />
+                    <div className="relative w-28 shrink-0">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="DD/MM/AA"
+                        value={l.dataBR}
+                        onChange={(e) => atualizarLinha(l.id, { dataBR: mascaraDataBR(e.target.value) })}
+                        className="h-8 w-full rounded-md border border-input bg-background pl-2 pr-7 text-xs font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const el = datePickerRefs.current[l.id]
+                          if (!el) return
+                          el.value = parseDataBR(l.dataBR) ?? ''
+                          if (typeof el.showPicker === 'function') el.showPicker()
+                          else el.click()
+                        }}
+                        className="absolute right-0.5 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                        aria-label="Abrir calendário"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="4" width="18" height="18" rx="2" />
+                          <path d="M16 2v4M8 2v4M3 10h18" />
+                        </svg>
+                      </button>
+                      <input
+                        ref={(el) => {
+                          datePickerRefs.current[l.id] = el
+                        }}
+                        type="date"
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        onChange={(e) => {
+                          const iso = e.target.value
+                          if (!iso) return
+                          const [y, m, d] = iso.split('-')
+                          atualizarLinha(l.id, { dataBR: `${d}/${m}/${y.slice(-2)}` })
+                        }}
+                        className="sr-only pointer-events-none absolute inset-0 opacity-0"
+                      />
+                    </div>
                     <div className="relative flex-1 max-w-[120px]">
                       <input
                         type="number"

@@ -40,11 +40,13 @@ type Pesagem = {
   data: string | null
   peso_kg: number | null
   peso_arroba: number | null
+  created_at: string
 }
 
 type Animal = {
   id: string
   numero_boi: number
+  boi_planilha: number | null
   vendedor: string | null
   data_compra: string | null
   valor_compra: number | null
@@ -56,6 +58,7 @@ type Animal = {
 type AnimalRow = {
   id: string
   numero_boi: number
+  boi_planilha: number | null
   vendedor: string | null
   data_compra: string | null
   valor_compra: number | null
@@ -234,6 +237,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
       const row: AnimalRow = {
         id: a.id,
         numero_boi: a.numero_boi,
+        boi_planilha: a.boi_planilha,
         vendedor: a.vendedor,
         data_compra: a.data_compra,
         valor_compra: a.valor_compra,
@@ -331,13 +335,32 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
     }
 
     if (pesagemDateFilters.length > 0) {
+      const filterSet = new Set(pesagemDateFilters)
       nextRows = nextRows.filter((r) => (
-        r.datas_pesagens.some((date) => pesagemDateFilters.includes(date))
+        r.datas_pesagens.some((date) => filterSet.has(date))
       ))
+
+      const minCreatedByRow = new Map<string, string>()
+      for (const r of nextRows) {
+        const animal = animaisById.get(r.id)
+        if (!animal) continue
+        let min = ''
+        for (const p of animal.pesagens) {
+          if (p.data && filterSet.has(p.data) && p.created_at) {
+            if (!min || p.created_at < min) min = p.created_at
+          }
+        }
+        minCreatedByRow.set(r.id, min)
+      }
+      nextRows = [...nextRows].sort((a, b) => {
+        const ka = minCreatedByRow.get(a.id) ?? ''
+        const kb = minCreatedByRow.get(b.id) ?? ''
+        return ka.localeCompare(kb)
+      })
     }
 
     return nextRows
-  }, [rows, boiSearch, pesoRange, pesagemDateFilters])
+  }, [rows, boiSearch, pesoRange, pesagemDateFilters, animaisById])
 
   // Colunas base
   const baseColumns = useMemo<ColumnDef<AnimalRow>[]>(() => [
@@ -357,6 +380,12 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
           {info.getValue() as number}
         </button>
       ),
+    },
+    {
+      accessorKey: 'boi_planilha',
+      header: 'Planilha',
+      size: 60,
+      cell: (info) => numFmt(info.getValue()),
     },
     {
       accessorKey: 'status',
@@ -431,10 +460,12 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
 
   const columns = useMemo(() => [...baseColumns, ...pesagemColumns], [baseColumns, pesagemColumns])
 
+  const effectiveSorting = pesagemDateFilters.length > 0 ? [] : sorting
+
   const table = useReactTable({
     data: filteredRows,
     columns,
-    state: { columnFilters, sorting },
+    state: { columnFilters, sorting: effectiveSorting },
     onColumnFiltersChange: setColumnFilters,
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
@@ -626,7 +657,11 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
       </div>
 
       {addPesagemOpen && (
-        <AddPesagemModal onClose={() => setAddPesagemOpen(false)} />
+        <AddPesagemModal
+          animais={data}
+          dataInicialISO={pesagemDateFilters.length === 1 ? pesagemDateFilters[0] : undefined}
+          onClose={() => setAddPesagemOpen(false)}
+        />
       )}
 
       {boiSelecionado && (
