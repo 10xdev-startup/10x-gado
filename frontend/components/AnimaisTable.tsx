@@ -24,6 +24,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { createClient } from '@/lib/supabase/client'
+import AddPesagemModal from '@/components/AddPesagemModal'
 
 declare module '@tanstack/react-table' {
   interface ColumnMeta<TData extends RowData, TValue> {
@@ -66,16 +68,26 @@ type AnimalRow = {
 // ---------------------------------------------------------------------------
 // Cores por pesagem
 // ---------------------------------------------------------------------------
-const PESAGEM_COLORS: Record<number, { header: string; cell: string }> = {
-  1: { header: 'bg-blue-200',   cell: 'bg-blue-50' },
-  2: { header: 'bg-green-200',  cell: 'bg-green-50' },
-  3: { header: 'bg-purple-200', cell: 'bg-purple-50' },
-  4: { header: 'bg-orange-200', cell: 'bg-orange-50' },
-  5: { header: 'bg-pink-200',   cell: 'bg-pink-50' },
-  6: { header: 'bg-cyan-200',   cell: 'bg-cyan-50' },
-  7: { header: 'bg-amber-200',  cell: 'bg-amber-50' },
-  8: { header: 'bg-red-200',    cell: 'bg-red-50' },
-  9: { header: 'bg-gray-200',   cell: 'bg-gray-50' },
+const PESAGEM_COLOR_PALETTE: { header: string; cell: string }[] = [
+  { header: 'bg-blue-200',    cell: 'bg-blue-50' },
+  { header: 'bg-green-200',   cell: 'bg-green-50' },
+  { header: 'bg-purple-200',  cell: 'bg-purple-50' },
+  { header: 'bg-orange-200',  cell: 'bg-orange-50' },
+  { header: 'bg-pink-200',    cell: 'bg-pink-50' },
+  { header: 'bg-cyan-200',    cell: 'bg-cyan-50' },
+  { header: 'bg-amber-200',   cell: 'bg-amber-50' },
+  { header: 'bg-red-200',     cell: 'bg-red-50' },
+  { header: 'bg-gray-200',    cell: 'bg-gray-50' },
+  { header: 'bg-teal-200',    cell: 'bg-teal-50' },
+  { header: 'bg-indigo-200',  cell: 'bg-indigo-50' },
+  { header: 'bg-lime-200',    cell: 'bg-lime-50' },
+  { header: 'bg-rose-200',    cell: 'bg-rose-50' },
+  { header: 'bg-fuchsia-200', cell: 'bg-fuchsia-50' },
+  { header: 'bg-sky-200',     cell: 'bg-sky-50' },
+]
+
+function pesagemColor(num: number) {
+  return PESAGEM_COLOR_PALETTE[(num - 1) % PESAGEM_COLOR_PALETTE.length]
 }
 
 // ---------------------------------------------------------------------------
@@ -90,12 +102,26 @@ const STATUS_CLASS: Record<string, string> = {
   vendido: 'bg-yellow-100 text-yellow-800',
 }
 
-function StatusBadge({ status }: { status: string | null }) {
+function StatusSelect({
+  status,
+  onChange,
+}: {
+  status: string | null
+  onChange: (next: string) => void
+}) {
   const key = status ?? ''
+  const cls = STATUS_CLASS[key] ?? 'bg-gray-100 text-gray-700'
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[key] ?? 'bg-gray-100 text-gray-700'}`}>
-      {STATUS_LABEL[key] ?? status ?? '—'}
-    </span>
+    <select
+      value={key}
+      onChange={(e) => onChange(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      className={`rounded-full px-2 py-0.5 text-xs font-medium border-0 focus:outline-none focus:ring-1 focus:ring-ring/30 cursor-pointer ${cls}`}
+    >
+      <option value="vivo">Vivo</option>
+      <option value="morreu">Morreu</option>
+      <option value="vendido">Vendido</option>
+    </select>
   )
 }
 
@@ -152,6 +178,39 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
   const [sortKey, setSortKey] = useState('numero_boi-asc')
   const [pesoRange, setPesoRange] = useState('')
   const [pesagemDateFilters, setPesagemDateFilters] = useState<string[]>([])
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
+  const [addPesagemOpen, setAddPesagemOpen] = useState(false)
+
+  async function handleStatusChange(id: string, next: string) {
+    let hadOverride = false
+    let prevOverride: string | undefined
+    setStatusOverrides((o) => {
+      hadOverride = id in o
+      prevOverride = o[id]
+      return { ...o, [id]: next }
+    })
+    const supabase = createClient()
+    const { data, error } = await supabase.from('animais').update({ status: next }).eq('id', id).select('id')
+    if (error || !data || data.length === 0) {
+      setStatusOverrides((o) => {
+        const copy = { ...o }
+        if (hadOverride && prevOverride !== undefined) copy[id] = prevOverride
+        else delete copy[id]
+        return copy
+      })
+      alert(`Erro ao atualizar status: ${error?.message ?? 'nenhuma linha foi atualizada (RLS?)'}`)
+    }
+  }
+
+  const maxPesagem = useMemo(() => {
+    let max = 0
+    for (const a of data) {
+      for (const p of a.pesagens) {
+        if (p.numero > max) max = p.numero
+      }
+    }
+    return Math.max(max, 1)
+  }, [data])
 
   // Transforma animais → linhas com p1_data, p1_kg, p1_arroba, p2_data...
   const rows: AnimalRow[] = useMemo(() => {
@@ -169,7 +228,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
         vendedor: a.vendedor,
         data_compra: a.data_compra,
         valor_compra: a.valor_compra,
-        status: a.status,
+        status: statusOverrides[a.id] ?? a.status,
         data_venda: a.data_venda,
         ultimo_kg: ultima?.peso_kg ?? null,
         ultima_data: ultima?.data ?? null,
@@ -178,7 +237,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
           .filter((date): date is string => Boolean(date)),
       }
 
-      for (let i = 1; i <= 9; i++) {
+      for (let i = 1; i <= maxPesagem; i++) {
         const p = byNum[i] ?? null
         row[`p${i}_data`]   = p?.data ?? null
         row[`p${i}_kg`]     = p?.peso_kg ?? null
@@ -187,7 +246,16 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
 
       return row
     })
-  }, [data])
+  }, [data, statusOverrides, maxPesagem])
+
+  const statusCounts = useMemo(() => {
+    const c = { vivo: 0, morreu: 0, vendido: 0 }
+    for (const r of rows) {
+      const s = r.status as 'vivo' | 'morreu' | 'vendido' | null
+      if (s && s in c) c[s]++
+    }
+    return c
+  }, [rows])
 
   const vendedores = useMemo(() => {
     const set = new Set(data.map((a) => a.vendedor ?? ''))
@@ -268,7 +336,12 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
     {
       accessorKey: 'status',
       header: 'Status',
-      cell: (info) => <StatusBadge status={info.getValue() as string} />,
+      cell: (info) => (
+        <StatusSelect
+          status={info.getValue() as string}
+          onChange={(next) => handleStatusChange(info.row.original.id, next)}
+        />
+      ),
       filterFn: 'equals',
     },
     { accessorKey: 'vendedor', header: 'Vendedor', filterFn: 'equals' },
@@ -298,10 +371,10 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
     },
   ], [])
 
-  // Colunas de pesagem (1-9)
+  // Colunas de pesagem (1..maxPesagem)
   const pesagemColumns = useMemo<ColumnDef<AnimalRow>[]>(() => {
     const cols: ColumnDef<AnimalRow>[] = []
-    for (let i = 1; i <= 9; i++) {
+    for (let i = 1; i <= maxPesagem; i++) {
       cols.push(
         {
           id: `p${i}_data`,
@@ -329,7 +402,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
       })
     }
     return cols
-  }, [])
+  }, [maxPesagem])
 
   const columns = useMemo(() => [...baseColumns, ...pesagemColumns], [baseColumns, pesagemColumns])
 
@@ -343,6 +416,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    autoResetPageIndex: false,
     initialState: {
       pagination: { pageSize: 50 },
       columnVisibility: {
@@ -394,9 +468,8 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
     <div className="flex flex-col gap-3 h-full min-h-0 px-2 pb-4">
       {/* Filtros */}
       <div className="inline-block min-w-full pr-16">
-        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-1.5">
-          <div className="min-w-0 overflow-x-auto">
-            <div className="flex w-max gap-1.5 pr-2">
+        <div className="min-w-0 overflow-x-auto">
+          <div className="flex w-max gap-1.5 pr-2">
               <input
                 type="number"
                 placeholder="Buscar boi #"
@@ -479,33 +552,57 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
                   </option>
                 ))}
               </select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 whitespace-nowrap justify-self-end">
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-              {filteredRows.length} bois
-            </span>
-            <button
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-              className="h-6 rounded-md border px-1.5 text-[11px] disabled:opacity-40 hover:bg-muted transition-colors"
-            >
-              Anterior
-            </button>
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-              {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
-            </span>
-            <button
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-              className="h-6 rounded-md border px-1.5 text-[11px] disabled:opacity-40 hover:bg-muted transition-colors"
-            >
-              Próxima
-            </button>
           </div>
         </div>
       </div>
+
+      {/* Pills de contagem + paginação */}
+      <div className="flex items-center justify-between gap-2 text-xs pr-16">
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium ${STATUS_CLASS.vivo}`}>
+            Vivos <span className="font-semibold">{statusCounts.vivo}</span>
+          </span>
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium ${STATUS_CLASS.morreu}`}>
+            Morreu <span className="font-semibold">{statusCounts.morreu}</span>
+          </span>
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium ${STATUS_CLASS.vendido}`}>
+            Vendidos <span className="font-semibold">{statusCounts.vendido}</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
+          <button
+            type="button"
+            onClick={() => setAddPesagemOpen(true)}
+            className="h-6 rounded-md border bg-background px-2 text-[11px] font-medium hover:bg-muted transition-colors"
+          >
+            + Adicionar pesagem
+          </button>
+          <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+            {filteredRows.length} bois
+          </span>
+          <button
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+            className="h-6 rounded-md border px-1.5 text-[11px] disabled:opacity-40 hover:bg-muted transition-colors"
+          >
+            Anterior
+          </button>
+          <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+            {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
+          </span>
+          <button
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+            className="h-6 rounded-md border px-1.5 text-[11px] disabled:opacity-40 hover:bg-muted transition-colors"
+          >
+            Próxima
+          </button>
+        </div>
+      </div>
+
+      {addPesagemOpen && (
+        <AddPesagemModal onClose={() => setAddPesagemOpen(false)} />
+      )}
 
       {/* Tabela */}
       <div className="flex-1 min-h-0 overflow-auto">
@@ -517,7 +614,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
                   <tr key={hg.id}>
                     {hg.headers.map((header, columnIndex) => {
                       const pNum = header.column.columnDef.meta?.pesagemNum
-                      const colorClass = pNum ? PESAGEM_COLORS[pNum].header : 'bg-muted/50'
+                      const colorClass = pNum ? pesagemColor(pNum).header : 'bg-muted/50'
                       const isFirstColumn = columnIndex === 0
                       return (
                         <th
@@ -544,7 +641,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
                   <tr key={row.id} className="border-t hover:brightness-95 transition-colors">
                     {row.getVisibleCells().map((cell, columnIndex) => {
                       const pNum = cell.column.columnDef.meta?.pesagemNum
-                      const colorClass = pNum ? PESAGEM_COLORS[pNum].cell : ''
+                      const colorClass = pNum ? pesagemColor(pNum).cell : ''
                       const isFirstColumn = columnIndex === 0
                       return (
                         <td
