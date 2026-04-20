@@ -15,6 +15,7 @@ export default async function AnimaisPage() {
       status,
       data_venda,
       pesagens (
+        id,
         numero,
         data,
         peso_kg,

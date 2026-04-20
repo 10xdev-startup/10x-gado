@@ -26,12 +26,13 @@ A célula `Nº boi` vira clicável (botão/link visual discreto — underline on
 
 ### Modal — layout
 - Título: `Boi #123` (com o `numero_boi`).
-- Corpo: lista de pesagens, **ordem crescente por `numero`**, uma linha por pesagem:
-  - `#{numero}` (label pequena à esquerda)
+- Corpo: lista de pesagens, **ordem decrescente por `numero`** (mais recente no topo, mais antiga embaixo), uma linha por pesagem:
+  - label `Peso NN:` (zero-padded para 2 dígitos — `Peso 01:`, `Peso 02:`, ... `Peso 10:`)
   - input `data` (dd/mm/yy)
   - input `peso (kg)` (sufixo "kg")
-  - `@ X.XX` arroba (derivada, read-only, exibida à direita)
   - botão `×` — **só habilitado na linha de maior `numero`** (última pesagem). Nas outras: visível mas desabilitado (opacity-30, cursor-not-allowed), com `title="Apague a última pesagem primeiro"`.
+
+Arroba não aparece na UI do modal — é derivada de kg e recalculada no save apenas para persistir em `peso_arroba`.
 - Banner de erro inline (padrão do `AddPesagemModal`).
 - Rodapé: `Cancelar` (esquerda/direita a definir) e `Salvar`.
 
@@ -42,7 +43,7 @@ Implementação: a cada render, identificar `max(numero)` entre as pesagens **ai
 
 ### Edição
 - `data` e `peso_kg` são editáveis por linha.
-- `peso_arroba` recalcula ao perder foco do peso (ou a cada `onChange`).
+- `peso_arroba` é recalculado apenas no momento do save (não aparece na UI).
 - `numero` não é editável (é sequência interna).
 
 ### Fluxo
@@ -90,7 +91,7 @@ CREATE POLICY "delete livre" ON pesagens FOR DELETE TO public USING (true);
 - UI:
   - Overlay `fixed inset-0 bg-black/40`, painel `max-w-sm` (alinhado ao AddPesagemModal).
   - Cabeçalho com `Boi #{numero_boi}` + ×.
-  - Corpo: lista de linhas (ordem crescente por `numero`).
+  - Corpo: lista de linhas (ordem decrescente por `numero`).
   - Rodapé: `Cancelar` + `Salvar`.
 - Lógica do delete: `const maxNumero = linhas.reduce((m,l) => Math.max(m, l.numero), 0)`; × só ativo se `l.numero === maxNumero`.
 - Save: monta `idsParaDeletar` e `updates`; faz `supabase.from('pesagens').delete().in('id', idsParaDeletar)` seguido de N `updates` (ou um `upsert`).
@@ -107,14 +108,14 @@ CREATE POLICY "delete livre" ON pesagens FOR DELETE TO public USING (true);
 2. **Refactor**: extrair `hojeBR`, `parseDataBR`, `mascaraDataBR` para `frontend/lib/dataBR.ts`. Atualizar `AddPesagemModal.tsx` pra importar de lá.
 3. **Componente**: criar `BoiModal.tsx` com a UI (lista + ×, edit inputs, footer). Sem salvar ainda — log do diff no console.
 4. **Lógica de delete**: × só ativo na última linha, remove do estado local.
-5. **Lógica de edit**: inputs controlados, arroba recalculada on-the-fly.
+5. **Lógica de edit**: inputs controlados de `data` e `peso_kg`. Arroba só entra no payload do save.
 6. **Save**: computar diff (deletar + atualizar), executar, tratar erro inline, `router.refresh()` + `onClose()`.
 7. **Trigger**: célula `numero_boi` clicável em `AnimaisTable.tsx` + render condicional do modal.
 8. **QA manual**:
    - Apagar última pesagem → sucesso, tabela atualiza.
    - Tentar apagar p2 quando existe p3 → × desabilitado.
    - Apagar p3 depois p2 depois p1 em cascata → todas somem.
-   - Editar data e peso → arroba recalcula + salva.
+   - Editar data e peso → salva com `peso_arroba` recalculado no banco.
    - Cancelar com edições pendentes → nada persiste.
 9. **Typecheck** + commit.
 

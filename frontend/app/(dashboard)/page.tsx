@@ -16,6 +16,7 @@ export default async function HomePage() {
       status,
       data_venda,
       pesagens (
+        id,
         numero,
         data,
         peso_kg,

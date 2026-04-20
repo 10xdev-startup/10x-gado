@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { createClient } from '@/lib/supabase/client'
 import AddPesagemModal from '@/components/AddPesagemModal'
+import BoiModal from '@/components/BoiModal'
 
 declare module '@tanstack/react-table' {
   interface ColumnMeta<TData extends RowData, TValue> {
@@ -34,6 +35,7 @@ declare module '@tanstack/react-table' {
 }
 
 type Pesagem = {
+  id: string
   numero: number
   data: string | null
   peso_kg: number | null
@@ -180,6 +182,13 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
   const [pesagemDateFilters, setPesagemDateFilters] = useState<string[]>([])
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
   const [addPesagemOpen, setAddPesagemOpen] = useState(false)
+  const [boiSelecionado, setBoiSelecionado] = useState<Animal | null>(null)
+
+  const animaisById = useMemo(() => {
+    const map = new Map<string, Animal>()
+    for (const a of data) map.set(a.id, a)
+    return map
+  }, [data])
 
   async function handleStatusChange(id: string, next: string) {
     let hadOverride = false
@@ -332,7 +341,23 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
 
   // Colunas base
   const baseColumns = useMemo<ColumnDef<AnimalRow>[]>(() => [
-    { accessorKey: 'numero_boi', header: 'Boi', size: 60 },
+    {
+      accessorKey: 'numero_boi',
+      header: 'Boi',
+      size: 60,
+      cell: (info) => (
+        <button
+          type="button"
+          onClick={() => {
+            const animal = animaisById.get(info.row.original.id)
+            if (animal) setBoiSelecionado(animal)
+          }}
+          className="underline-offset-2 hover:underline cursor-pointer"
+        >
+          {info.getValue() as number}
+        </button>
+      ),
+    },
     {
       accessorKey: 'status',
       header: 'Status',
@@ -369,7 +394,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
         )
       ),
     },
-  ], [])
+  ], [animaisById])
 
   // Colunas de pesagem (1..maxPesagem)
   const pesagemColumns = useMemo<ColumnDef<AnimalRow>[]>(() => {
@@ -602,6 +627,13 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
 
       {addPesagemOpen && (
         <AddPesagemModal onClose={() => setAddPesagemOpen(false)} />
+      )}
+
+      {boiSelecionado && (
+        <BoiModal
+          animal={boiSelecionado}
+          onClose={() => setBoiSelecionado(null)}
+        />
       )}
 
       {/* Tabela */}
