@@ -12,3 +12,7 @@ output/
 
 
 .claude/skills/gstack/
+
+# Python
+__pycache__/
+*.pyc
