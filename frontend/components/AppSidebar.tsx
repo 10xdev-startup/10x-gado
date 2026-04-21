@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
@@ -15,6 +15,36 @@ import { Check, Maximize2, Minimize2, MousePointerClick, PanelLeft } from 'lucid
 
 type SidebarMode = 'expanded' | 'collapsed' | 'hover'
 
+const STORAGE_KEY = 'sidebar-mode'
+const CHANGE_EVENT = 'sidebar-mode-change'
+
+function isSidebarMode(v: string | null): v is SidebarMode {
+  return v === 'expanded' || v === 'collapsed' || v === 'hover'
+}
+
+function subscribeSidebarMode(cb: () => void) {
+  window.addEventListener('storage', cb)
+  window.addEventListener(CHANGE_EVENT, cb)
+  return () => {
+    window.removeEventListener('storage', cb)
+    window.removeEventListener(CHANGE_EVENT, cb)
+  }
+}
+
+function getSidebarModeSnapshot(): SidebarMode {
+  const stored = localStorage.getItem(STORAGE_KEY)
+  return isSidebarMode(stored) ? stored : 'expanded'
+}
+
+function getServerSidebarModeSnapshot(): SidebarMode {
+  return 'expanded'
+}
+
+function setSidebarModePersisted(mode: SidebarMode) {
+  localStorage.setItem(STORAGE_KEY, mode)
+  window.dispatchEvent(new Event(CHANGE_EVENT))
+}
+
 const NAV_ITEMS = [
   { href: '/', title: 'Início', icon: '🏠' },
 ]
@@ -24,29 +54,16 @@ function AppSidebar() {
   const pathname  = usePathname()
   const { setOpen, isMobile } = useSidebar()
 
-  // Must match SSR: reading localStorage in useState initializer causes hydration
-  // mismatch when saved mode is "hover" (SidebarRail only then).
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('expanded')
-  const [modeRestored, setModeRestored] = useState(false)
-
-  const prevModeRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    const stored = localStorage.getItem('sidebar-mode') as SidebarMode | null
-    if (stored === 'expanded' || stored === 'collapsed' || stored === 'hover') {
-      setSidebarMode(stored)
-    }
-    setModeRestored(true)
-  }, [])
+  const sidebarMode = useSyncExternalStore(
+    subscribeSidebarMode,
+    getSidebarModeSnapshot,
+    getServerSidebarModeSnapshot,
+  )
 
   useEffect(() => {
-    if (!modeRestored) return
-    if (prevModeRef.current === sidebarMode) return
-    prevModeRef.current = sidebarMode
-    localStorage.setItem('sidebar-mode', sidebarMode)
     if (isMobile) return
     setOpen(sidebarMode === 'expanded')
-  }, [sidebarMode, setOpen, isMobile, modeRestored])
+  }, [sidebarMode, setOpen, isMobile])
 
   const leaveTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dropdownOpenRef  = useRef(false)
@@ -129,17 +146,17 @@ function AppSidebar() {
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="end" className="w-48">
-                <DropdownMenuItem onClick={() => setSidebarMode('expanded')}>
+                <DropdownMenuItem onClick={() => setSidebarModePersisted('expanded')}>
                   <Maximize2 className="size-4 mr-2" />
                   Expandido
                   {sidebarMode === 'expanded' && <Check className="size-4 ml-auto text-blue-600" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSidebarMode('collapsed')}>
+                <DropdownMenuItem onClick={() => setSidebarModePersisted('collapsed')}>
                   <Minimize2 className="size-4 mr-2" />
                   Recolhido
                   {sidebarMode === 'collapsed' && <Check className="size-4 ml-auto text-blue-600" />}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSidebarMode('hover')}>
+                <DropdownMenuItem onClick={() => setSidebarModePersisted('hover')}>
                   <MousePointerClick className="size-4 mr-2" />
                   Expandir ao passar
                   {sidebarMode === 'hover' && <Check className="size-4 ml-auto text-blue-600" />}
