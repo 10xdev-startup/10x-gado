@@ -39,3 +39,14 @@ export function isoToBR(iso: string): string {
   if (!y || !m || !d) return ''
   return `${d}/${m}/${y.slice(-2)}`
 }
+
+export const formatBRL = (value: number) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+
+// '2022-07-01' → 'Jul/22'
+export function mesAbrev(iso: string): string {
+  const [y, m] = iso.split('-')
+  if (!y || !m) return iso
+  const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+  return `${meses[parseInt(m, 10) - 1]}/${y.slice(-2)}`
+}
