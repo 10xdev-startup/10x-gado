@@ -29,6 +29,7 @@ import AddPesagemModal from '@/components/AddPesagemModal'
 import BoiModal from '@/components/BoiModal'
 
 declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     pesagemNum?: number
   }
@@ -98,9 +99,6 @@ function pesagemColor(num: number) {
 // ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
-const STATUS_LABEL: Record<string, string> = {
-  vivo: 'Vivo', morreu: 'Morreu', vendido: 'Vendido',
-}
 const STATUS_CLASS: Record<string, string> = {
   vivo: 'bg-green-100 text-green-800',
   morreu: 'bg-red-100 text-red-800',
@@ -462,6 +460,7 @@ export default function AnimaisTable({ data }: { data: Animal[] }) {
 
   const effectiveSorting = pesagemDateFilters.length > 0 ? [] : sorting
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: filteredRows,
     columns,
