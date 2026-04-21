@@ -9,6 +9,7 @@ dist/
 # Extratos bancários e CSVs gerados — dados sensíveis, não commitar
 fluxo-de-caixa/
 output/
+Fazenda.xlsx - Evolução Gado.csv
 
 
 .claude/skills/gstack/
