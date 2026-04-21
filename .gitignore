@@ -6,9 +6,8 @@ dist/
 .next/
 *.log
 
-# Dados brutos, scripts e gerados
-"Fazenda.xlsx - Evolução Gado.csv"
-Fazenda*.csv
+# Extratos bancários e CSVs gerados — dados sensíveis, não commitar
+fluxo-de-caixa/
 output/
-scripts/
+
 
